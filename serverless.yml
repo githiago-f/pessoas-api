@@ -1,0 +1,95 @@
+org: githiago
+app: pessoas-api
+service: pessoas-api
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  iam:
+    role:
+      statements:
+        - Effect: 'Allow'
+          Action:
+            - 'dynamodb:PutItem'
+            - 'dynamodb:Get*'
+            - 'dynamodb:Scan*'
+            - 'dynamodb:UpdateItem'
+            - 'dynamodb:DeleteItem'
+          Resource: arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tableName}
+
+plugins:
+  - serverless-dynamodb
+  - serverless-offline
+
+custom:
+  # Our stage is based on what is passed in when running serverless
+  # commands. Or fallsback to what we have set in the provider section.
+  stage: ${opt:stage, self:provider.stage, 'dev'}
+  # Set the table name here so we can use it while testing locally
+  tableName: pessoas
+
+  serverless-dynamodb:
+    start:
+      migrate: true
+    port: 8000
+    docker: false
+
+
+functions:
+  criarPessoa:
+    handler: src/lambdas/pessoas/create.handler
+    environment:
+      TABLE_NAME: ${self:custom.tableName}
+      STAGE: ${self:custom.stage}
+    events:
+      - httpApi:
+          path: /pessoas
+          method: POST
+
+  listaPessoas:
+    handler: src/lambdas/pessoas/index.handler
+    environment:
+      TABLE_NAME: ${self:custom.tableName}
+      STAGE: ${self:custom.stage}
+    events:
+      - httpApi:
+          path: /pessoas
+          method: GET
+  
+  buscaPessoa:
+    handler: src/lambdas/pessoas/view.handler
+    environment:
+      TABLE_NAME: ${self:custom.tableName}
+      STAGE: ${self:custom.stage}
+    events:
+      - httpApi:
+          path: /pessoas/{nickname}
+          method: GET
+  
+  deletarPessoa:
+    handler: src/lambdas/pessoas/delete-one.handler
+    environment:
+      TABLE_NAME: ${self:custom.tableName}
+      STAGE: ${self:custom.stage}
+    events:
+      - httpApi:
+          path: /pessoas/{nickname}
+          method: DELETE
+
+resources:
+  Resources:
+    PessoasTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tableName}
+        AttributeDefinitions:
+          - AttributeName: apelido
+            AttributeType: S
+        KeySchema:
+          - AttributeName: apelido
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        BillingMode: PROVISIONED
