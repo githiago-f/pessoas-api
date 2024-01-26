@@ -17,6 +17,9 @@ provider:
             - 'dynamodb:UpdateItem'
             - 'dynamodb:DeleteItem'
           Resource: arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tableName}
+  environment:
+    REDIS_PORT: !GetAtt RedisEndpoint.Port
+    REDIS_HOST: !GetAtt RedisEndpoint.Address
 
 plugins:
   - serverless-dynamodb
@@ -37,59 +40,47 @@ custom:
 
 
 functions:
-  criarPessoa:
-    handler: src/lambdas/pessoas/create.handler
+  cacheTest:
+    handler: src/lambdas/cached/handler.handler
+    vpc:
+      securityGroupIds:
+        - !Ref ElastiCacheSG
+      subnetIds:
+        # TODO
     environment:
-      TABLE_NAME: ${self:custom.tableName}
       STAGE: ${self:custom.stage}
     events:
       - httpApi:
-          path: /pessoas
-          method: POST
-
-  listaPessoas:
-    handler: src/lambdas/pessoas/index.handler
-    environment:
-      TABLE_NAME: ${self:custom.tableName}
-      STAGE: ${self:custom.stage}
-    events:
-      - httpApi:
-          path: /pessoas
+          path: /cache-test
           method: GET
-  
-  buscaPessoa:
-    handler: src/lambdas/pessoas/view.handler
-    environment:
-      TABLE_NAME: ${self:custom.tableName}
-      STAGE: ${self:custom.stage}
-    events:
-      - httpApi:
-          path: /pessoas/{nickname}
-          method: GET
-  
-  deletarPessoa:
-    handler: src/lambdas/pessoas/delete-one.handler
-    environment:
-      TABLE_NAME: ${self:custom.tableName}
-      STAGE: ${self:custom.stage}
-    events:
-      - httpApi:
-          path: /pessoas/{nickname}
-          method: DELETE
 
 resources:
   Resources:
-    PessoasTable:
-      Type: AWS::DynamoDB::Table
+    CacheVPC:
+      Type: AWS::EC2::VPC
       Properties:
-        TableName: ${self:custom.tableName}
-        AttributeDefinitions:
-          - AttributeName: apelido
-            AttributeType: S
-        KeySchema:
-          - AttributeName: apelido
-            KeyType: HASH
-        ProvisionedThroughput:
-          ReadCapacityUnits: 1
-          WriteCapacityUnits: 1
-        BillingMode: PROVISIONED
+        CidrBlock: 10.0.0.0/16
+        EnableDnsSupport: 'true'
+        EnableDnsHostnames: 'true'
+        # TODO
+    ElastiCacheSG:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Elasticache Security Group
+        SecurityGroupIngress:
+          - CidrIp: 0.0.0.0/0
+            IpProtocol: '-1'
+            FromPort: '0'
+            ToPort: ${self:provider.environment.REDIS_PORT}
+        VpcId: !Ref CacheVPC
+        # TODO
+    RedisCache:
+      Type: 'AWS::ElastiCache::CacheCluster'
+      Properties:
+        Engine: redis
+        ClusterName: redis-lambda-elasticache
+        CacheNodeType: cache.t2.micro
+        NumCacheNodes: 1
+        AZMode: single-az
+        VpcSecurityGroupIds:
+          - !GetAtt ElastiCacheSG.GroupId
